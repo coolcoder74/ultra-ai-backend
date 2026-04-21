@@ -38,14 +38,25 @@ function extractText(data) {
 app.post("/chat", async (req, res) => {
   try {
     const message = req.body?.message ?? "";
+    const history = Array.isArray(req.body?.history) ? req.body.history : [];
     const settings = req.body?.settings ?? {};
 
-    const model =
-      settings.model || process.env.OPENAI_MODEL || "gpt-5.4-nano";
-
+    const model = settings.model || process.env.OPENAI_MODEL || "gpt-5.4-nano";
     const instructions =
-      settings.system ||
-      "You are a friendly Ai chatbot that can help with any task.";
+      settings.system || "You are a friendly Ai chatbot that can help with any task.";
+
+    const historyText = history
+      .filter((m) => m && (m.role === "user" || m.role === "assistant") && typeof m.content === "string")
+      .map((m) => `${m.role === "user" ? "User" : "Assistant"}: ${m.content}`)
+      .join("\n");
+
+    const prompt = `${instructions}
+
+Conversation so far:
+${historyText}
+
+User: ${message}
+Assistant:`;
 
     const apiRes = await fetch("https://api.openai.com/v1/responses", {
       method: "POST",
@@ -55,8 +66,7 @@ app.post("/chat", async (req, res) => {
       },
       body: JSON.stringify({
         model,
-        instructions,
-        input: message
+        input: prompt
       })
     });
 
@@ -70,16 +80,8 @@ app.post("/chat", async (req, res) => {
 
     const text = extractText(data);
 
-    if (text) {
-      return res.json({ reply: text });
-    }
-
     return res.json({
-      reply: `No visible text came back. Status: ${data.status || "unknown"}${
-        data.incomplete_details?.reason
-          ? `, reason: ${data.incomplete_details.reason}`
-          : ""
-      }`
+      reply: text || "The model returned no text."
     });
   } catch (err) {
     return res.status(500).json({
