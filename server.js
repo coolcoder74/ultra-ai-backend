@@ -12,14 +12,40 @@ app.get("/", (_req, res) => {
   res.send("Ultra Ai backend is alive.");
 });
 
+function extractText(data) {
+  if (typeof data.output_text === "string" && data.output_text.trim()) {
+    return data.output_text.trim();
+  }
+
+  const parts = [];
+
+  for (const item of data.output || []) {
+    if (item.type === "message" && Array.isArray(item.content)) {
+      for (const contentItem of item.content) {
+        if (
+          (contentItem.type === "output_text" || contentItem.type === "text") &&
+          typeof contentItem.text === "string"
+        ) {
+          parts.push(contentItem.text);
+        }
+      }
+    }
+  }
+
+  return parts.join("\n").trim();
+}
+
 app.post("/chat", async (req, res) => {
   try {
     const message = req.body?.message ?? "";
     const settings = req.body?.settings ?? {};
 
-    const model = settings.model || process.env.OPENAI_MODEL || "gpt-5.4-nano";
+    const model =
+      settings.model || process.env.OPENAI_MODEL || "gpt-5.4-nano";
+
     const instructions =
-      settings.system || "You are a friendly Ai chatbot that can help with any task.";
+      settings.system ||
+      "You are a friendly Ai chatbot that can help with any task.";
 
     const apiRes = await fetch("https://api.openai.com/v1/responses", {
       method: "POST",
@@ -37,13 +63,23 @@ app.post("/chat", async (req, res) => {
     const data = await apiRes.json();
 
     if (!apiRes.ok) {
-      return res.status(apiRes.status).json({
+      return res.json({
         reply: `OpenAI error: ${data.error?.message || "unknown error"}`
       });
     }
 
+    const text = extractText(data);
+
+    if (text) {
+      return res.json({ reply: text });
+    }
+
     return res.json({
-      reply: data.output_text || "The model returned no text."
+      reply: `No visible text came back. Status: ${data.status || "unknown"}${
+        data.incomplete_details?.reason
+          ? `, reason: ${data.incomplete_details.reason}`
+          : ""
+      }`
     });
   } catch (err) {
     return res.status(500).json({
