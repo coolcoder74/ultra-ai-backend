@@ -15,14 +15,13 @@ app.get("/", (_req, res) => {
 app.post("/chat", async (req, res) => {
   try {
     const message = req.body?.message ?? "";
-    const history = req.body?.history ?? [];
     const settings = req.body?.settings ?? {};
 
-    const model = process.env.OPENAI_MODEL || "gpt-5.4-nano";
-    const systemPrompt =
+    const model = settings.model || process.env.OPENAI_MODEL || "gpt-5.4-nano";
+    const instructions =
       settings.system || "You are a friendly Ai chatbot that can help with any task.";
 
-    const response = await fetch("https://api.openai.com/v1/responses", {
+    const apiRes = await fetch("https://api.openai.com/v1/responses", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -30,36 +29,25 @@ app.post("/chat", async (req, res) => {
       },
       body: JSON.stringify({
         model,
-        input: [
-          {
-            role: "system",
-            content: systemPrompt
-          },
-          ...history
-            .filter((m) => m.role === "user" || m.role === "assistant")
-            .map((m) => ({
-              role: m.role,
-              content: m.content
-            })),
-          {
-            role: "user",
-            content: message
-          }
-        ]
+        instructions,
+        input: message
       })
     });
 
-    const data = await response.json();
+    const data = await apiRes.json();
 
-    const reply =
-      data.output_text ||
-      "No response.";
+    if (!apiRes.ok) {
+      return res.status(apiRes.status).json({
+        reply: `OpenAI error: ${data.error?.message || "unknown error"}`
+      });
+    }
 
-    res.json({ reply });
+    return res.json({
+      reply: data.output_text || "The model returned no text."
+    });
   } catch (err) {
-    res.status(500).json({
-      error: "Server error",
-      details: String(err)
+    return res.status(500).json({
+      reply: `Server error: ${String(err)}`
     });
   }
 });
